@@ -1,0 +1,207 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    types: [ closed ]
+    branches: [ master, main ]
+
+jobs:
+  auto-version:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get current version
+      id: current_version
+      run: |
+        CURRENT_VERSION=$(cat VERSION 2>/dev/null || echo "0.0.0")
+        echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "Current version: $CURRENT_VERSION"
+
+    - name: Analyze commits for version bump
+      id: version_bump
+      run: |
+        # Get commits since last version tag or all commits if no tags
+        LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "")
+        
+        if [ -n "$LAST_TAG" ]; then
+          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+        else
+          COMMITS=$(git log --pretty=format:"%s" --no-merges)
+        fi
+        
+        echo "Analyzing commits:"
+        echo "$COMMITS"
+        
+        # Initialize bump type
+        BUMP_TYPE="none"
+        
+        # Check for breaking changes (major bump)
+        if echo "$COMMITS" | grep -qE '^feat.*!:|^fix.*!:|^[a-z]+.*!:|BREAKING CHANGE'; then
+          BUMP_TYPE="major"
+          echo "Found breaking changes - major bump"
+        # Check for new features (minor bump)
+        elif echo "$COMMITS" | grep -qE '^feat(\([^)]*\))?:|^feature(\([^)]*\))?:'; then
+          BUMP_TYPE="minor"
+          echo "Found new features - minor bump"
+        # Check for bug fixes (patch bump)
+        elif echo "$COMMITS" | grep -qE '^fix(\([^)]*\))?:|^bugfix(\([^)]*\))?:|^hotfix(\([^)]*\))?:'; then
+          BUMP_TYPE="patch"
+          echo "Found bug fixes - patch bump"
+        # Check for other conventional commit types that should trigger patch
+        elif echo "$COMMITS" | grep -qE '^(docs|style|refactor|perf|test|chore|ci|build)(\([^)]*\))?:'; then
+          BUMP_TYPE="patch"
+          echo "Found maintenance changes - patch bump"
+        else
+          echo "No version bump needed"
+        fi
+        
+        echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+
+    - name: Calculate new version
+      id: new_version
+      if: steps.version_bump.outputs.bump_type != 'none'
+      run: |
+        CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+        BUMP_TYPE="${{ steps.version_bump.outputs.bump_type }}"
+        
+        # Parse current version
+        IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Bump version based on type
+        case $BUMP_TYPE in
+          major)
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          minor)
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          patch)
+            PATCH=$((PATCH + 1))
+            ;;
+        esac
+        
+        NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "Version will be bumped from $CURRENT_VERSION to $NEW_VERSION ($BUMP_TYPE)"
+
+    - name: Update version files
+      if: steps.version_bump.outputs.bump_type != 'none'
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+        
+        # Update VERSION file
+        echo "$NEW_VERSION" > VERSION
+        
+        # Update deployment.yaml with new version
+        if [ -f "k8s/deployment.yaml" ]; then
+          sed -i "s|fedorinoalex/k8s-rsshd:.*|fedorinoalex/k8s-rsshd:$NEW_VERSION|g" k8s/deployment.yaml
+        fi
+        
+        echo "Updated version files to $NEW_VERSION"
+
+    - name: Commit version bump
+      if: steps.version_bump.outputs.bump_type != 'none'
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+        BUMP_TYPE="${{ steps.version_bump.outputs.bump_type }}"
+        
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        git add VERSION k8s/deployment.yaml
+        git commit -m "chore: bump version to $NEW_VERSION ($BUMP_TYPE)" || exit 0
+        
+        # Create and push tag
+        git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
+        git push origin "v$NEW_VERSION"
+        git push origin master
+
+    - name: Generate changelog
+      if: steps.version_bump.outputs.bump_type != 'none'
+      id: changelog
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+        
+        # Get commits since last version tag
+        LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -2 | tail -1 || echo "")
+        
+        if [ -n "$LAST_TAG" ] && [ "$LAST_TAG" != "v$NEW_VERSION" ]; then
+          CHANGES=$(git log ${LAST_TAG}..v$NEW_VERSION --pretty=format:"- %s (%h)" --no-merges)
+        else
+          CHANGES=$(git log v$NEW_VERSION --pretty=format:"- %s (%h)" --no-merges)
+        fi
+        
+        # Categorize changes
+        FEATURES=$(echo "$CHANGES" | grep -E "^- feat" || true)
+        FIXES=$(echo "$CHANGES" | grep -E "^- fix" || true)
+        OTHERS=$(echo "$CHANGES" | grep -vE "^- (feat|fix)" || true)
+        
+        CHANGELOG="## What's Changed in v$NEW_VERSION\n\n"
+        
+        if [ -n "$FEATURES" ]; then
+          CHANGELOG="${CHANGELOG}### 🚀 New Features\n$FEATURES\n\n"
+        fi
+        
+        if [ -n "$FIXES" ]; then
+          CHANGELOG="${CHANGELOG}### 🐛 Bug Fixes\n$FIXES\n\n"
+        fi
+        
+        if [ -n "$OTHERS" ]; then
+          CHANGELOG="${CHANGELOG}### 🔧 Other Changes\n$OTHERS\n\n"
+        fi
+        
+        echo -e "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+        echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release
+      if: steps.version_bump.outputs.bump_type != 'none'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.new_version.outputs.new_version }}
+        release_name: K8s-RsshD v${{ steps.new_version.outputs.new_version }}
+        body: |
+          ${{ steps.changelog.outputs.CHANGELOG }}
+          
+          ## Docker Images
+          
+          ```bash
+          docker pull fedorinoalex/k8s-rsshd:${{ steps.new_version.outputs.new_version }}
+          docker pull fedorinoalex/k8s-rsshd:latest
+          ```
+          
+          ## Kubernetes Deployment
+          
+          ```bash
+          kubectl apply -f https://raw.githubusercontent.com/fedorino-alex/k8s-rsshd/v${{ steps.new_version.outputs.new_version }}/k8s/
+          ```
+        draft: false
+        prerelease: false
+
+    - name: Summary
+      if: steps.version_bump.outputs.bump_type != 'none'
+      run: |
+        echo "🎉 Version automatically bumped to ${{ steps.new_version.outputs.new_version }}"
+        echo "📋 Bump type: ${{ steps.version_bump.outputs.bump_type }}"
+        echo "🏷️ Tag created: v${{ steps.new_version.outputs.new_version }}"
+        echo "📦 Docker build will be triggered by the new tag"

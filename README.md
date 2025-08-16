@@ -23,29 +23,6 @@ This container runs an SSH daemon that:
 3. **Manages authorized keys** via Kubernetes ConfigMap
 4. **Provides secure, passwordless access** to remote infrastructure
 
-## Quick Start (Kubernetes)
-
-### 1. Deploy to Kubernetes
-```bash
-# Clone the repository
-git clone https://github.com/fedorino-alex/k8s-rsshd.git
-cd k8s-rsshd
-
-# Add your public key to the ConfigMap
-kubectl edit configmap rsshd-authorized-keys
-
-# Deploy everything
-kubectl apply -f k8s/
-
-# Get the service URL
-kubectl get service rsshd-service
-```
-
-### 2. Port-forward localport 2222 to port 22 
-```bash
-kubectl port-forward 
-```
-
 ## Configuration
 
 ### Adding SSH Keys
@@ -161,6 +138,50 @@ This project is based on the original RsshD by Emmanuel Frecon, licensed under t
 3. Make your changes
 4. Test with Kubernetes
 5. Submit a pull request
+
+### Version Management
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for **automatic version bumping**:
+
+```bash
+# Commits automatically trigger version bumps:
+git commit -m "feat: add new feature"     # Minor bump (1.0.0 → 1.1.0)
+git commit -m "fix: resolve bug"          # Patch bump (1.1.0 → 1.1.1)  
+git commit -m "feat!: breaking change"    # Major bump (1.1.1 → 2.0.0)
+```
+
+**Manual version management** (if needed):
+```bash
+# Check current version
+./scripts/version.sh show
+
+# Manual bumps (use conventional commits instead)
+./scripts/version.sh patch    # 1.0.0 → 1.0.1
+./scripts/version.sh minor    # 1.0.1 → 1.1.0
+./scripts/version.sh major    # 1.1.0 → 2.0.0
+```
+
+See [CONVENTIONAL_COMMITS.md](CONVENTIONAL_COMMITS.md) for complete guide.
+
+### Creating Releases
+
+**Automatic releases** (recommended):
+- Just use conventional commit messages
+- Versions bump automatically on push to master
+- GitHub releases created automatically
+
+**Manual releases** (if needed):
+1. Go to **Actions** → **Manual Release** in GitHub
+2. Click **Run workflow**
+3. Leave version empty for auto-calculation or enter specific version
+4. Choose release type (release/prerelease)
+
+The automation:
+- ✅ **Analyzes commit messages** for version bump type
+- ✅ **Updates VERSION file** and creates git tags
+- ✅ **Builds multi-platform Docker images** (amd64, arm64)
+- ✅ **Creates GitHub releases** with automated changelog
+- ✅ **Pushes to Docker Hub** with semantic version tags
 
 ---
 
