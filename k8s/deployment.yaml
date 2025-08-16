@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rsshd
+  namespace: default
+  labels:
+    app: rsshd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rsshd
+  template:
+    metadata:
+      labels:
+        app: rsshd
+    spec:
+      containers:
+      - name: rsshd
+        image: fedorinoalex/k8s-rsshd:latest
+        imagePullPolicy: IfNotPresent  # Pull from registry or use local
+        ports:
+        - containerPort: 22
+          name: ssh
+        - containerPort: 80
+          name: tunnel
+        volumeMounts:
+        - name: authorized-keys
+          mountPath: /tmp/ssh-keys
+          readOnly: true
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          tcpSocket:
+            port: 22
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 22
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: authorized-keys
+        configMap:
+          name: rsshd-authorized-keys

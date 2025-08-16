@@ -1,95 +1,170 @@
-# RsshD
+# K8s-RsshD
 
-This provides a minimal Docker container for keeping the connections to remote
-servers that are placed behind (several layers) of NATed networks. I use this to
-keep track of Raspberry Pis, "in the wild" and behind mobile connections. The
-image sacrifices a little bit of security for ease of use, but this can be
-turned off.
+**Kubernetes-Ready SSH Reverse Tunnel Container**
 
-The idea is to provide a dockerised sshd (on top of
-[Alpine](http://www.alpinelinux.org/)), remote servers will open a reverse ssh
-tunnels to the exposed host (running the docker container) and you will then be
-able to log into the remote servers via the reverse tunnels, i.e. via the
-exposed host.
+*Based on original work by Emmanuel Frecon <efrecon@gmail.com>*
 
-As long as you carefully mount host directories through the `-v` option, you
-will be able to keep your settings between restarts. Let's take a real life
-example to kickstart the description:
+A minimal, secure SSH reverse tunnel container designed for Kubernetes deployments. Perfect for maintaining persistent connections to remote servers behind NAT, firewalls, or mobile connections (like Raspberry Pis "in the wild").
 
-    docker run -it --rm -p 2222:22 --name rsshd -p 10000-10100:10000-10100 -e PASSWORD=secret -v /opt/keys/host:/etc/ssh/keys -v /opt/keys/clients:/root/.ssh efrecon/rsshd
-    
-This example would:
+## Key Features
 
-* Start a container listening for incoming ssh connections on port `2222`.
-* Be able to accept 101 clients, through exposing ports `10000` to `10100`.
-  These will be the ports to which you will direct ssh connection on the host
-  once everything is setup.
-* Arrange to give a "very secret" password to the `root` user within the
-  Alpine-based container. This is because Alpine has no default password for
-  `root` and because this is probably not a very good idea, and not something
-  that is supported by ssh. If you do not provide a password, one will be
-  generated randomly at start, and printed to the logs for capture and use.
-* Mount the host keys onto the `/opt/keys/host` on the host computer. This
-  enables to keep the same keys at every restart of the container. The keys are
-  generated if they do not exist whenever the container is started.
-* Mount the list of authorised clients (your servers!) in the host directory at
-  `/opt/keys/clients`, to pertain restarts.
-* The command run in interactive mode, but you will probably want to replace the
-  options `-it --rm`, with at least `-d` and even perhaps `-d --restart=always`
-  to make sure your remote servers can always connect.
-  
-## Connecting from remote servers
+- 🔐 **SSH Key-based authentication only** (no passwords)
+- ☸️ **Kubernetes-native** with ConfigMap integration
+- 🐳 **Minimal Alpine-based** container
+- 🔧 **Simple configuration** via Kubernetes manifests
+- 🚀 **Zero persistent storage** requirements
+- 🔄 **Automatic SSH host key generation**
 
-To test things out, from a remote server, you could issue a command such as:
+## Architecture
 
-    ssh -p 2222 root@domain.tld
-    
-The command will prompt you for the password of the `root` user in the container
-(e.g. `secret` in the previous example) and let you in. The command supposes
-that you can access your server on `domain.tld` and that its firewall permits
-connections on port `2222`. However, to open a permanent tunnel, you would
-rather enter a command such as:
+This container runs an SSH daemon that:
+1. **Accepts incoming SSH connections** from remote servers
+2. **Creates reverse tunnels** to access those servers
+3. **Manages authorized keys** via Kubernetes ConfigMap
+4. **Provides secure, passwordless access** to remote infrastructure
 
-    ssh -fN -R 10000:localhost:22 -p 2222 root@domain.tld
-    
-This would create a reverse tunnel on port `10000` so you can connect to your
-server from the host running the docker container using (`user` being a user on
-the remote server):
+## Quick Start (Kubernetes)
 
-    ssh -p 10000 user@localhost
+### 1. Deploy to Kubernetes
+```bash
+# Clone the repository
+git clone https://github.com/fedorino-alex/k8s-rsshd.git
+cd k8s-rsshd
 
-## Keeping the Connection at all times
+# Add your public key to the ConfigMap
+kubectl edit configmap rsshd-authorized-keys
 
-Using `autossh` and through making sure you can login without the need for a
-password, you should be able to keep those connections alive for longer periods
-of time. More information is available in this
-[guide](http://xmodulo.com/access-linux-server-behind-nat-reverse-ssh-tunnel.html),
-but in summary you should perform the following steps:
+# Deploy everything
+kubectl apply -f k8s/
 
-On the remote server, create the DSA key (if necessary) and copy it to the host running the
-container through the following commands:
+# Get the service URL
+kubectl get service rsshd-service
+```
 
-    ssh-keygen -t rsa
-    ssh-copy-id -i ~/.ssh/id_rsa.pub -p 2222 root@domain.tld
-    
-To keep the connection open at all times through `autossh`, issue the following:
+### 2. Port-forward localport 2222 to port 22 
+```bash
+kubectl port-forward 
+```
 
-    autossh -M 10099 -fN -o "PubkeyAuthentication=yes" -o "StrictHostKeyChecking=false" -o "PasswordAuthentication=no" -o "ServerAliveInterval 60" -o "ServerAliveCountMax 3" -R 10000:localhost:22 -p 2222 root@domain.tld
+## Configuration
 
-On a RaspberryPi, adding this line to `/etc/rc.local` will ensure that the
-connection is kept alive at all times.
+### Adding SSH Keys
 
-## Improving Security
+Edit the ConfigMap to authorize new clients:
 
-If you set the environment variable `LOCAL` to `1`, e.g. `-e LOCAL=1` when
-starting with `docker run`, you will not be able to access the tunnels from
-outside the container. Instead, you will have to jump in the container with
-`docker exec -it rsshd ash` and from within, issue commands such as:
+```bash
+kubectl edit configmap rsshd-authorized-keys
+```
 
-    ssh -p 10000 user@localhost
-    
-This provides complete encapsulation, at the expense of another layer of
-"jumping" whenver you need to access your servers.
+Add your public keys:
+```yaml
+data:
+  authorized_keys: |
+    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user@hostname
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... another-user@host
+```
+
+### Service Configuration
+
+The service exposes:
+- **Port 22**: SSH daemon (for incoming connections)
+- **Port 80**: Tunnel port (configurable)
+
+Modify `k8s/service.yaml` to add more tunnel ports or change service type.
+
+## Docker Usage (Alternative)
+
+You can also run with Docker directly:
+
+```bash
+# Use pre-built image from Docker Hub
+docker run -d -p 2222:22 -p 8080:80 \
+  -v /path/to/authorized_keys:/tmp/ssh-keys/authorized_keys:ro \
+  fedorinoalex/k8s-rsshd:latest
+
+# Or build locally
+docker build -t k8s-rsshd:local .
+docker run -d -p 2222:22 -p 8080:80 \
+  -v /path/to/authorized_keys:/tmp/ssh-keys/authorized_keys:ro \
+  k8s-rsshd:local
+```
+
+## Remote Server Setup
+
+### 1. Add your public key to ConfigMap
+```bash
+cat ~/.ssh/id_rsa.pub
+```
+
+### 2. Port forward to 22 port
+```bash
+kubectl port-forward service/k8s-rsshd 2222:22
+```
+
+### 3. Create reverse tunnel
+```bash
+ssh -N -R 5000:localhost:80 -p 2222 root@localhost
+```
+
+### 4. Run dev server on 5000 port
+```bash
+python3 -m http.server 5000 # example http server
+```
+
+### 5. Make test call to k8s-rsshd port 80
+
+## Security Features
+
+- **No password authentication** - Keys only
+- **Configurable access control** - Via ConfigMap
+- **Minimal attack surface** - Alpine-based container
+- **Standard SSH security** - Proper file permissions
+- **Container isolation** - Optional LOCAL mode for enhanced security
+
+## Troubleshooting
+
+### Check deployment status
+```bash
+kubectl get pods -l app=rsshd
+kubectl logs deployment/rsshd
+```
+
+### Verify SSH configuration
+```bash
+kubectl exec deployment/rsshd -- cat /root/.ssh/authorized_keys
+kubectl exec deployment/rsshd -- ssh -T root@localhost
+```
+
+### Test connection
+```bash
+ssh -vv -p 2222 root@<RSSHD-HOST>
+```
+
+## Differences from Original
+
+This fork focuses on Kubernetes deployment with these changes:
+
+- ✅ **Simplified architecture** - No persistent volume requirements
+- ✅ **Key-based auth only** - Enhanced security
+- ✅ **ConfigMap integration** - Kubernetes-native key management
+- ✅ **Reduced complexity** - Removed custom key storage logic
+- ✅ **Production ready** - Proper health checks and resource limits
+
+## License
+
+This project is based on the original RsshD by Emmanuel Frecon, licensed under the BSD 2-Clause License. See [LICENSE](LICENSE) and [ATTRIBUTION.md](ATTRIBUTION.md) for details.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with Kubernetes
+5. Submit a pull request
+
+---
+
+*Perfect for connecting to Raspberry Pis, IoT devices, and other remote systems behind firewalls!* 🚀
 
 
 

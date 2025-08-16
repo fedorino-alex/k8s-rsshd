@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rsshd-authorized-keys
+  namespace: default
+data:
+  authorized_keys: |
+    # Add your public keys here, one per line

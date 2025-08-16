@@ -1,5 +1,16 @@
 #!/usr/bin/env ash
 
+# K8s-RsshD - SSH Reverse Tunnel Daemon
+# 
+# Based on original work by Emmanuel Frecon <efrecon@gmail.com>
+# Copyright (c) 2016, Emmanuel Frecon
+# Copyright (c) 2025, Alex Fedorino
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# See LICENSE file for full terms.
+#
+
 # This is the main startup script for the running sshd to keep client
 # tunnels.
 
@@ -17,72 +28,42 @@ if [ -z "$PASSWORD" ]; then
 fi
 echo "root:${PASSWORD}" | chpasswd
 
-# Directory for HOSTKEYS, create if necessary
-if [ -z "$KEYS" ]; then
-    KEYS=$SDIR/keys
-fi
-if [ ! -d $KEYS ]; then
-    mkdir -p $KEYS
-fi
-
-# Generate server keys, if necessary. ssh-keygen generates the keys in the
-# default directory, not where we want the keys, so we move the keys once they
-# have been generated.
-if [ ! -f "${KEYS}/ssh_host_rsa_key" ]; then
-    # One shot generation, -A really is for init.d style startup script, but
-    # this is what we sort of are.
+# Generate server keys if they don't exist
+if [ ! -f "$SDIR/ssh_host_rsa_key" ]; then
     ssh-keygen -A
-    
-    # Move the keys to the location that we want
-    if [ -f "$SDIR/ssh_host_rsa_key" ]; then
-        mv $SDIR/ssh_host_rsa_key $KEYS/ssh_host_rsa_key
-        mv $SDIR/ssh_host_rsa_key.pub $KEYS/ssh_host_rsa_key.pub
-    fi
-    if [ -f "$SDIR/ssh_host_dsa_key" ]; then
-        mv $SDIR/ssh_host_dsa_key $KEYS/ssh_host_dsa_key
-        mv $SDIR/ssh_host_dsa_key.pub $KEYS/ssh_host_dsa_key.pub
-    fi
-    if [ -f "$SDIR/ssh_host_ecdsa_key" ]; then
-        mv $SDIR/ssh_host_ecdsa_key $KEYS/ssh_host_ecdsa_key
-        mv $SDIR/ssh_host_ecdsa_key.pub $KEYS/ssh_host_ecdsa_key.pub
-    fi
-    if [ -f "$SDIR/ssh_host_ed25519_key" ]; then
-        mv $SDIR/ssh_host_ed25519_key $KEYS/ssh_host_ed25519_key
-        mv $SDIR/ssh_host_ed25519_key.pub $KEYS/ssh_host_ed25519_key.pub
-    fi
-fi
-
-# Arrange for the config to point at the proper server keys, i.e. at the proper
-# location
-if [ -f "$KEYS/ssh_host_rsa_key" ]; then
-    sed -i "s;\#HostKey $SDIR/ssh_host_rsa_key;HostKey $KEYS/ssh_host_rsa_key;g" $SDIR/sshd_config
-fi
-if [ -f "$KEYS/ssh_host_dsa_key" ]; then
-    sed -i "s;\#HostKey $SDIR/ssh_host_dsa_key;HostKey $KEYS/ssh_host_dsa_key;g" $SDIR/sshd_config
-fi
-if [ -f "$KEYS/ssh_host_ecdsa_key" ]; then
-    sed -i "s;\#HostKey $SDIR/ssh_host_ecdsa_key;HostKey $KEYS/ssh_host_ecdsa_key;g" $SDIR/sshd_config
-fi
-if [ -f "$KEYS/ssh_host_ed25519_key" ]; then
-    sed -i "s;\#HostKey $SDIR/ssh_host_ed25519_key;HostKey $KEYS/ssh_host_ed25519_key;g" $SDIR/sshd_config
 fi
 
 # Allow external hosts to connect
-if [ -z "$LOCAL" -o "$LOCAL" == 0 ]; then
-    sed -i "s;\GatewayPorts no;GatewayPorts yes;g" $SDIR/sshd_config
-    sed -i "s;\AllowTcpForwarding no;AllowTcpForwarding yes;g" $SDIR/sshd_config
-fi
+sed -i "s;\GatewayPorts no;GatewayPorts yes;g" $SDIR/sshd_config
+sed -i "s;\AllowTcpForwarding no;AllowTcpForwarding yes;g" $SDIR/sshd_config
 
-# Allow root login if a password was set.
-if [ -n "${PASSWORD}" ]; then
-    sed -i "s;\#PermitRootLogin .*;PermitRootLogin yes;g" $SDIR/sshd_config
-fi
+# Disable password authentication if requested (force key-based auth only)
+sed -i "s;.*PasswordAuthentication.*;PasswordAuthentication no;g" $SDIR/sshd_config
+sed -i "s;.*PubkeyAuthentication.*;PubkeyAuthentication yes;g" $SDIR/sshd_config
+sed -i "s;.*AuthenticationMethods.*;AuthenticationMethods publickey;g" $SDIR/sshd_config
+sed -i "s;\#PermitRootLogin .*;PermitRootLogin prohibit-password;g" $SDIR/sshd_config
+echo "PasswordAuthentication no" >> $SDIR/sshd_config
+echo "PubkeyAuthentication yes" >> $SDIR/sshd_config
+echo "AuthenticationMethods publickey" >> $SDIR/sshd_config
 
-# Fix permissions and access to the .ssh directory (in case it was shared with
-# the host)
+# Setup SSH directory and authorized keys
+mkdir -p $HOME/.ssh
 chown root $HOME/.ssh
-chmod 755 $HOME/.ssh
+chmod 700 $HOME/.ssh
 
-# Absolute path necessary! Pass all remaining arguents to sshd. This enables to
+# Copy authorized keys from ConfigMap if available
+if [ -f "/tmp/ssh-keys/authorized_keys" ]; then
+    cp /tmp/ssh-keys/authorized_keys $HOME/.ssh/authorized_keys
+    chmod 600 $HOME/.ssh/authorized_keys
+    chown root:root $HOME/.ssh/authorized_keys
+    echo "Authorized keys copied from ConfigMap"
+else
+    echo "No authorized keys found in ConfigMap"
+    touch $HOME/.ssh/authorized_keys
+    chmod 600 $HOME/.ssh/authorized_keys
+    chown root:root $HOME/.ssh/authorized_keys
+fi
+
+# Absolute path necessary! Pass all remaining arguments to sshd. This enables to
 # override some options through -o, for example.
 /usr/sbin/sshd -f ${SDIR}/sshd_config -D -e "$@"

@@ -1,34 +1,31 @@
-FROM alpine:3.16.3
-LABEL org.opencontainers.image.authors="Emmanuel Frecon <efrecon@gmail.com>"
+F# 
+# K8s-RsshD - Kubernetes SSH Reverse Tunnel Container
+# Based on original work by Emmanuel Frecon <efrecon@gmail.com>
+# 
+# Copyright (c) 2016, Emmanuel Frecon
+# Copyright (c) 2025, Alex Fedorino
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# See LICENSE file for full terms.
+#3.16.3
+# 
+# RsshD - Kubernetes SSH Reverse Tunnel Container
+# Based on original work by Emmanuel Frecon <efrecon@gmail.com>
+# 
+# Copyright (c) 2016, Emmanuel Frecon
+# Copyright (c) 2025, Aliaksandr Fedaryna
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# See LICENSE file for full terms.
+#
 
 RUN apk --update add openssh
 COPY sshd.sh /usr/local/bin/
 
 # Expose the regular ssh port
 EXPOSE 22
-EXPOSE 10000-10100
-
-# To set the password of the root user (Alpine has no password per
-# default!) use the following variable.  Otherwise, a password will
-# be generated and output in the log.
-# ENV PASSWORD="xxx"
-
-# You can modify the (internal) location to store the host keys
-# with the following variable. You would probably want to expose the
-# volume.
-# ENV KEYS="/etc/ssh/keys"
-
-# By default, the container allows external clients to jump into the tunnels from
-# the outside (host, for example). If you want to turn off this behaviour,
-# meaning that you will have to docker exec into the container before being able
-# to jump into the tunnel, you could set the following variable.
-# ENV LOCAL=1
-
-# Where to store the host keys (to arrange for proper restarts/recreations)
-VOLUME /etc/ssh/keys
-
-# Where to store the list of authorised clients (good for restarts)
-VOLUME /root/.ssh
-
+EXPOSE 80
 
 ENTRYPOINT /usr/local/bin/sshd.sh
