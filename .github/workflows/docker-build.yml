@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ master ]
     # Only run if VERSION or k8s/deployment.yaml changes
     paths:
       - 'VERSION'
