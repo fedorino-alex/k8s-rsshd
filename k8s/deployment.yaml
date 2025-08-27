@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: rsshd
-        image: fedorinoalex/k8s-rsshd:1.1.5
+        image: fedorinoalex/k8s-rsshd:1.1.6
         imagePullPolicy: IfNotPresent  # Pull from registry or use local
         ports:
         - containerPort: 22
