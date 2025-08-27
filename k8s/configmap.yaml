@@ -4,5 +4,5 @@ metadata:
   name: rsshd-authorized-keys
 data:
   authorized_keys: |
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCtQJNmAM+V3PUlxtEw+Ze3xxe2WXDjQT3ZkeRSDEWF+LxZIrqI0VmUxI8r93LG581qG71gWO8Dsu4gV6wsJGMMYQv7KnTUpLTVgsJBiUf/CT+z7c/AKethA+MVRaP3zFUlh1H20A02r0xiLZZ+bvkDGlEOBqeHEccIsaK685+lIAmeSOhVUR3Lm7VTUGGgm5je6gFUlyC6tCeoih71wquVljRg4LnGdLzMBfQbjUfUVq+FqI0Qw9VHaZ0NhVX75k2f5ZEAeY7dqjlMOsVbCXAzlXfmOK5M0rOOb2b9oa09BR2aZ5FEtMKMR/adgjscxZcZAVZN4qBtLH/9zGVaFKbZG4TqYEl9ciYfuW4xWAuZML5npNeV2UiZkBkNXgpl+/8VxguWiwk/5AvwZA4cmE5Xpf9dRy4D1lquHBi6WAzFx7qakOf7SlRJd2wzYbn0FXO9cd72Jg9a6iRkKNdbChZtiDBhLwFVEVP40RDcuaGwTJheptTEKhltNlZnM46wNJs= alexf
-    # Add your public keys here, one per line
+    # Add your SSH public keys here, one per line
+    # Example: ssh-rsa AAAAB3NzaC1yc2EAAAA... user@hostname
