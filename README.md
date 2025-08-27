@@ -80,7 +80,7 @@ kubectl port-forward service/k8s-rsshd 2222:22
 
 ### 3. Create reverse tunnel
 ```bash
-ssh -N -R 5000:localhost:80 -p 2222 root@localhost
+ssh -N -R 80:localhost:5000 -p 2222 root@localhost
 ```
 
 ### 4. Run dev server on 5000 port
