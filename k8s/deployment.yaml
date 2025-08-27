@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rsshd
-  namespace: default
   labels:
     app: rsshd
 spec:
